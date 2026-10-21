@@ -1,3 +1,4 @@
+# Copyright 2026 AfkaraLP
 """Qwen3 TTS Web UI - Easy voice cloning using Qwen TTS."""
 
 __version__ = "0.1.0"

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# Copyright 2026 AfkaraLP
 """Web UI Server Launcher.
 
 Start the FastAPI server for voice cloning functionality.
@@ -51,7 +51,7 @@ class LoadingSpinner:
         """Check if the server is healthy and model is loaded."""
         try:
             url = f"http://localhost:{self.port}/health"
-            req = urllib.request.Request(url, method="GET")  # noqa: S310
+            req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=2) as response:  # noqa: S310
                 data = json.loads(response.read().decode())
                 return data.get("voice_cloner_loaded", False)

@@ -1,3 +1,4 @@
+# Copyright 2026 AfkaraLP
 """Core voice cloning functionality using Qwen TTS model."""
 
 from __future__ import annotations

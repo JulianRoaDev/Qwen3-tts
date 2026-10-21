@@ -1,7 +1,9 @@
+# Copyright 2026 AfkaraLP
 """FastAPI server for Qwen Voice Cloning Web UI."""
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -65,6 +67,11 @@ def safe_delete_file(file_path: str | Path) -> None:
         Path(file_path).unlink(missing_ok=True)
     except OSError:
         logger.warning("Failed to delete file %s", file_path)
+
+
+def get_file_ctime(file_path: str | Path) -> str:
+    """Get creation timestamp of a file as a string."""
+    return str(Path(file_path).stat().st_ctime)
 
 
 # Initialize metadata files
@@ -498,9 +505,9 @@ async def upload_reference_audio(
 
     if existing_audio_id:
         # Clean up temp files
-        temp_path.unlink()
+        safe_delete_file(temp_path)
         if trimmed_path != str(temp_path):
-            Path(trimmed_path).unlink()
+            safe_delete_file(trimmed_path)
 
         # Return existing reference
         existing_data = metadata[existing_audio_id]
@@ -514,7 +521,7 @@ async def upload_reference_audio(
 
     # Generate unique ID for new file
     audio_id = str(uuid.uuid4())
-    file_extension = Path(file.filename if file.filename else "audio").suffix or ".wav"
+    file_extension = Path(file.filename or "audio").suffix or ".wav"
     saved_filename = f"{audio_id}{file_extension}"
     saved_path = REFERENCE_DIR / saved_filename
 
@@ -522,12 +529,12 @@ async def upload_reference_audio(
     try:
         shutil.move(trimmed_path, str(saved_path))
         # Clean up original temp file
-        temp_path.unlink()
+        safe_delete_file(temp_path)
     except Exception as e:
         # Clean up temp files on error
-        temp_path.unlink()
+        safe_delete_file(temp_path)
         if trimmed_path != str(temp_path):
-            Path(trimmed_path).unlink()
+            safe_delete_file(trimmed_path)
         raise HTTPException(status_code=500, detail=f"Failed to save file: {e}") from e
 
     # Auto-transcribe if ref_text not provided (after trimming)
@@ -540,17 +547,17 @@ async def upload_reference_audio(
     # Save metadata with file hash
     metadata[audio_id] = {
         "filename": saved_filename,
-        "original_name": file.filename if file.filename else "unknown",
+        "original_name": file.filename or "unknown",
         "ref_text": ref_text,
         "file_hash": file_hash,
-        "created_at": str(Path(saved_path).stat().st_ctime),
+        "created_at": get_file_ctime(saved_path),
     }
     save_reference_metadata(metadata)
 
     return ReferenceAudio(
         id=audio_id,
         filename=saved_filename,
-        original_name=file.filename if file.filename else "unknown",
+        original_name=file.filename or "unknown",
         ref_text=ref_text,
         created_at=metadata[audio_id]["created_at"],
     )
@@ -751,7 +758,7 @@ async def clone_voice_with_youtube(
     # Save metadata
     metadata = load_reference_metadata()
     display_name = (
-        request.name if request.name else f"YouTube Audio - {request.youtube_url}"
+        request.name or f"YouTube Audio - {request.youtube_url}"
     )
     metadata[audio_id] = {
         "filename": saved_filename,
@@ -759,7 +766,7 @@ async def clone_voice_with_youtube(
         "name": display_name,
         "ref_text": ref_text,
         "file_hash": compute_file_hash(saved_path),
-        "created_at": str(Path(saved_path).stat().st_ctime),
+        "created_at": get_file_ctime(saved_path),
     }
     save_reference_metadata(metadata)
 
@@ -840,7 +847,7 @@ async def clone_voice_with_upload(  # noqa: C901, PLR0915
         # New file - move trimmed file to final location
         audio_id = str(uuid.uuid4())
         file_extension = (
-            Path(file.filename if file.filename else "audio").suffix or ".wav"
+            Path(file.filename or "audio").suffix or ".wav"
         )
         saved_filename = f"{audio_id}{file_extension}"
         ref_audio_path = REFERENCE_DIR / saved_filename
@@ -870,10 +877,10 @@ async def clone_voice_with_upload(  # noqa: C901, PLR0915
         # Save metadata with file hash
         metadata[audio_id] = {
             "filename": saved_filename,
-            "original_name": file.filename if file.filename else "unknown",
+            "original_name": file.filename or "unknown",
             "ref_text": ref_text,
             "file_hash": file_hash,
-            "created_at": str(Path(ref_audio_path).stat().st_ctime),
+            "created_at": get_file_ctime(ref_audio_path),
         }
         save_reference_metadata(metadata)
 
@@ -882,7 +889,7 @@ async def clone_voice_with_upload(  # noqa: C901, PLR0915
 
     # Determine ref_audio_id to use
     ref_audio_id_to_store = (
-        existing_audio_id if existing_audio_id else ref_audio_id_to_use
+        existing_audio_id or ref_audio_id_to_use
     )
 
     # Start background task
@@ -1284,7 +1291,7 @@ async def get_cloned_audio(task_id: str) -> FileResponse:
         raise HTTPException(status_code=400, detail="Audio not ready")
 
     output_path = Path(task["output_path"])
-    if not output_path.exists():
+    if not await asyncio.to_thread(output_path.exists):
         raise HTTPException(status_code=404, detail="Output file not found")
 
     return FileResponse(
